@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using UnityEngine;
 using System;
 using DG.Tweening;
-using UnityEngine.SceneManagement;
 
 
 public class GameManager : MonoBehaviour
@@ -61,62 +60,89 @@ public class GameManager : MonoBehaviour
 
     public CanvasGroup logoScreen;
 
+    [Header("Single-scene level loading")]
+    [Tooltip("Levels are prefabs in a Resources folder named Level_<number>.")]
+    public string levelsResourcePath = "Levels/Level_";
+
+    [Tooltip("Editor testing: when > 0 this level is loaded on Play instead of the saved progress.")]
+    public int editorStartLevel;
+
+    [Tooltip("When the player runs out of authored levels a random one from this number upwards is played.")]
+    public int randomLevelsStartAt = 10;
+
+    GameObject currentLevelInstance;
+    Transform levelContainer;
+    int totalLevels = -1;
+
+    public int TotalLevels
+    {
+        get
+        {
+            if (totalLevels < 0)
+            {
+                totalLevels = 0;
+                while (Resources.Load<GameObject>(levelsResourcePath + (totalLevels + 1)) != null)
+                    totalLevels++;
+            }
+            return totalLevels;
+        }
+    }
+
     private void Awake()
     {
         //PlayerPrefs.SetInt("Level", 29);
+
+        ApplyOriginalLighting();
+    }
+
+    /// <summary>
+    /// Same lighting the old per-level scenes had, applied from code so the single Game scene
+    /// always looks identical (independent of baked/auto-generated lighting state).
+    /// </summary>
+    void ApplyOriginalLighting()
+    {
+        RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Trilight;
+        RenderSettings.ambientSkyColor = new Color(0.8181766f, 0.8900104f, 1.1486982f, 1f);
+        RenderSettings.ambientEquatorColor = new Color(0.1254895f, 0.39043456f, 0.5660378f, 1f);
+        RenderSettings.ambientGroundColor = new Color(0.33962262f, 0.30384475f, 0.23228905f, 1f);
+        RenderSettings.ambientIntensity = 1f;
+
+        foreach (Light l in FindObjectsOfType<Light>())
+        {
+            if (l.type != LightType.Directional)
+                continue;
+
+            l.color = new Color(0.94706f, 1f, 0.9009434f, 1f);
+            l.intensity = 1.1f;
+            l.shadows = LightShadows.Soft;
+            RenderSettings.sun = l;
+        }
+
+        DynamicGI.UpdateEnvironment();
     }
 
     void Start()
     {
-
-        // Subscribe to the sceneLoaded event
-        SceneManager.sceneLoaded += OnSceneLoaded;
-
-        if(SceneManager.GetActiveScene().name == "StartScene")
-        {
-            Invoke("InitGame", 1.5f);
-        }
-        else
-        {
-            #if UNITY_EDITOR
-                LevelLoaded?.Invoke();
-
-                level_complete_UI.gameObject.SetActive(false);
-                level_lose_UI.gameObject.SetActive(false);
-
-                HideLogoScreen();
-
-                CarsInLevel.Clear();
-
-                Car[] cars = GameObject.FindObjectsOfType<Car>();
-                foreach (Car car in cars)
-                {
-                    CarsInLevel.Add(car);
-                }
-
-                carsInitialCount = CarsInLevel.Count;
-            #endif
-        }
+        // The logo screen is visible while the first level loads.
+        Invoke("InitGame", 1.5f);
     }
 
     void InitGame()
     {
         currentLevel = PlayerPrefs.GetInt("Level");
-        if(currentLevel == 0 )
+        if (currentLevel == 0)
         {
             currentLevel = 1;
 
             PlayerPrefs.SetInt("Level", currentLevel);
         }
 
-        if (SceneExists("Level_" + currentLevel))
-        {
-            SceneManager.LoadScene("Level_" + currentLevel);
-        }
-        else
-        {
-            SceneManager.LoadScene("Level_" + UnityEngine.Random.Range(10, 30));
-        }
+#if UNITY_EDITOR
+        if (editorStartLevel > 0)
+            currentLevel = editorStartLevel;
+#endif
+
+        LoadLevel(currentLevel);
     }
 
     public void CarClicked()
@@ -135,7 +161,8 @@ public class GameManager : MonoBehaviour
         carEscaped = car;
 
         // spawn coin
-        Instantiate(coinPrefab, car.transform.position + new Vector3(0, 0.5f, 0), Quaternion.identity);
+        Instantiate(coinPrefab, car.transform.position + new Vector3(0, 0.5f, 0), Quaternion.identity,
+            currentLevelInstance != null ? currentLevelInstance.transform : null);
 
         CarsInLevel.Remove(car.GetComponent<Car>());
 
@@ -211,64 +238,87 @@ public class GameManager : MonoBehaviour
         logoScreen.gameObject.SetActive(true);
 
         logoScreen.DOFade(1f, 1.35f)
-            .OnComplete(() => 
-            {
-                if (SceneExists("Level_" + currentLevel))
-                {
-                    SceneManager.LoadScene("Level_" + currentLevel);
-                }
-                else
-                {
-                    SceneManager.LoadScene("Level_" + UnityEngine.Random.Range(10,30));
-                }
-            });
+            .OnComplete(() => LoadLevel(currentLevel));
     }
 
-    bool SceneExists(string sceneName)
+    /// <summary>Prefab that holds the content of a level, or null when the level doesn't exist.</summary>
+    GameObject FindLevelPrefab(int level)
     {
-
-        // Iterate through all loaded scenes and check if the specified scene exists
-        for (int i = 0; i < SceneManager.sceneCountInBuildSettings; i++)
-        {
-            string pathToScene = SceneUtility.GetScenePathByBuildIndex(i);
-            string loadedScene = System.IO.Path.GetFileNameWithoutExtension(pathToScene);
-
-            /*Debug.Log("LgCoreReloader: Reloading to scene(0): " + sceneName);
-
-            Scene loadedScene = SceneManager.GetSceneByBuildIndex(i);
-            Debug.LogWarning(loadedScene.name);
-            */
-
-            if (loadedScene == sceneName)
-            {
-                return true;
-            }
-        }
-        return false;
+        return Resources.Load<GameObject>(levelsResourcePath + level);
     }
 
-    void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+    public void LoadLevel(int level)
     {
-        // Check if the loaded scene is the one you are interested in
-        if (scene.name.Contains("Level"))
+        StopAllCoroutines();
+        StartCoroutine(LoadLevelRoutine(level));
+    }
+
+    IEnumerator LoadLevelRoutine(int level)
+    {
+        // remove whatever level is currently on screen
+        if (currentLevelInstance != null)
         {
-            LevelLoaded?.Invoke();
+            Destroy(currentLevelInstance);
+            currentLevelInstance = null;
 
-            level_complete_UI.gameObject.SetActive(false);
-            level_lose_UI.gameObject.SetActive(false);
-
-            HideLogoScreen();
-
-            CarsInLevel.Clear();
-
-            Car[] cars = GameObject.FindObjectsOfType<Car>();
-            foreach (Car car in cars)
-            {
-                CarsInLevel.Add(car);
-            }
-
-            carsInitialCount = CarsInLevel.Count;
+            // destroyed objects are still found until the end of the frame
+            yield return null;
         }
+
+        CarsInLevel.Clear();
+
+        GameObject prefab = FindLevelPrefab(level);
+        if (prefab == null)
+        {
+            // out of authored levels -> endless random levels (same behaviour the game had before)
+            int total = TotalLevels;
+            int from = Mathf.Clamp(randomLevelsStartAt, 1, Mathf.Max(1, total));
+            prefab = FindLevelPrefab(UnityEngine.Random.Range(from, total + 1));
+        }
+
+        if (prefab == null)
+        {
+            Debug.LogError("No level prefabs found at Resources/" + levelsResourcePath + "<n>");
+            yield break;
+        }
+
+        if (levelContainer == null)
+        {
+            GameObject container = GameObject.Find("LevelContainer");
+            if (container == null)
+                container = new GameObject("LevelContainer");
+
+            levelContainer = container.transform;
+        }
+
+        currentLevelInstance = Instantiate(prefab, levelContainer);
+        currentLevelInstance.name = prefab.name;
+
+        LevelInfo info = currentLevelInstance.GetComponent<LevelInfo>();
+        if (info != null)
+            info.ApplyCamera(Camera.main);
+
+        OnLevelReady();
+    }
+
+    void OnLevelReady()
+    {
+        LevelLoaded?.Invoke();
+
+        level_complete_UI.gameObject.SetActive(false);
+        level_lose_UI.gameObject.SetActive(false);
+
+        HideLogoScreen();
+
+        CarsInLevel.Clear();
+
+        Car[] cars = currentLevelInstance.GetComponentsInChildren<Car>();
+        foreach (Car car in cars)
+        {
+            CarsInLevel.Add(car);
+        }
+
+        carsInitialCount = CarsInLevel.Count;
     }
 
     void HideLogoScreen()

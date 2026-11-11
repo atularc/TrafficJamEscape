@@ -1,0 +1,35 @@
+# Levels – single scene setup
+
+The game now runs in **one scene**: `Assets/Scenes/Game.unity`
+(camera, light, `MANAGERS_AND_UI` with GameManager / UIManager / SoundManager / all UI).
+
+Every level is a **prefab** that only holds level content (roads, land, cars, pedestrians, crosswalks,
+road points, escape triggers). `GameManager` spawns the prefab for the current level into `LevelContainer`,
+moves the camera to the pose stored in the prefab's `LevelInfo` component, and the UI (level number, popups,
+coins) updates from the existing `LevelLoaded` event.
+
+```
+Assets/Resources/Levels/Level_1.prefab ... Level_100.prefab    <- level content, loaded by name
+Assets/Scenes/Game.unity                                       <- the only scene in Build Settings
+Assets/Scenes/Legacy/                                          <- old per-level scenes (not in the build, safe to delete)
+Assets/Scripts/LevelInfo.cs                                    <- camera pose per level
+Assets/Editor/LevelBuilder.cs                                  <- Tools > Traffic Jam > ... (rebuild tools)
+Assets/Editor/LevelData/generated_levels.json                  <- car layouts of levels 31-100
+```
+
+* Levels 1-30 are the original levels, converted 1:1 from the old scenes (same objects, same positions).
+* Levels 31-100 reuse the original maps (some mirrored left/right) with new car puzzles. Each puzzle was
+  checked with a solver and then played through automatically in Unity with the real `Car.cs` code.
+* After level 100 the game keeps going with random levels (`GameManager.randomLevelsStartAt` .. last level).
+
+## Testing a level
+Select the `MANAGERS_AND_UI` / `GameManager` object in `Game.unity` and set **Editor Start Level** (e.g. 57), press Play.
+(0 = use the saved progress.)
+
+## Adding your own level
+1. Duplicate any `Level_N.prefab` in `Assets/Resources/Levels`, name it `Level_<next number>` (e.g. `Level_101`).
+2. Edit it (move land, add cars from `Assets/Prefabs/Car_*.prefab`, ...). Keep one `EscapeTrigger` at every road end
+   and a `RoadPoint` (layer 6) wherever a car has to turn.
+3. Set the camera in the `LevelInfo` component on the prefab root if you need a different framing.
+
+No scene or build-settings changes are needed – levels are found by name.
