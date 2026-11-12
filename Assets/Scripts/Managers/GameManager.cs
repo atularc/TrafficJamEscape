@@ -106,6 +106,9 @@ public class GameManager : MonoBehaviour
 
         if (GetComponent<LevelHud>() == null)
             gameObject.AddComponent<LevelHud>();
+
+        if (GetComponent<MetaHud>() == null)
+            gameObject.AddComponent<MetaHud>();
     }
 
     /// <summary>
@@ -174,6 +177,8 @@ public class GameManager : MonoBehaviour
     public int chapterBonusCoins = 5;
     public int maxUndosPerLevel = 3;
     public int undosUsed;
+    public int hintsUsed;
+    public int lastLevelStars;
     public bool lastLevelEndedChapter;
 
     readonly List<Car> escapedCars = new List<Car>();
@@ -249,6 +254,11 @@ public class GameManager : MonoBehaviour
             if (lastLevelPerfect)
                 coinsEarnedInCurrentLevel += perfectBonusCoins;
 
+            // 3 stars = clean, unaided run; each kind of mistake/aid costs one star
+            lastLevelStars = Mathf.Clamp(3 - (hitsInLevel > 0 ? 1 : 0) - ((undosUsed + hintsUsed) > 0 ? 1 : 0), 1, 3);
+            if (lastLevelStars > PlayerPrefs.GetInt("stars_" + currentLevel, 0))
+                PlayerPrefs.SetInt("stars_" + currentLevel, lastLevelStars);
+
             LevelFinished();
 
             return;
@@ -306,9 +316,28 @@ public class GameManager : MonoBehaviour
     {
         currentLevel++;
 
-        PlayerPrefs.SetInt("Level", currentLevel);
+        // replaying an old level must never lower the saved progress
+        PlayerPrefs.SetInt("Level", Mathf.Max(PlayerPrefs.GetInt("Level"), currentLevel));
 
         ShowLogoScreen();
+    }
+
+    public int MaxUnlockedLevel { get { return Mathf.Max(1, PlayerPrefs.GetInt("Level")); } }
+
+    /// <summary>Jump to an unlocked level from the level-select screen.</summary>
+    public void JumpToLevel(int level)
+    {
+        if (level < 1 || level > MaxUnlockedLevel)
+            return;
+
+        CancelInvoke("LoadNextLevel");
+        currentLevel = level;
+        ShowLogoScreen();
+    }
+
+    public void AddCoins(int amount)
+    {
+        UpdateCoins(PlayerPrefs.GetInt("playercoins") + amount);
     }
 
     void ShowLogoScreen()
@@ -406,6 +435,8 @@ public class GameManager : MonoBehaviour
         lastLevelPerfect = false;
         lastLevelEndedChapter = false;
         undosUsed = 0;
+        hintsUsed = 0;
+        lastLevelStars = 0;
         escapedCars.Clear();
         escapedCoins.Clear();
     }

@@ -44,3 +44,6 @@ No scene or build-settings changes are needed – levels are found by name.
   pedestrians, hint/undo). Stored in PlayerPrefs keys `tip_*`.
 - **Pedestrian signal**: `Pedestrian.waitAtEnds` seconds of waiting at each curb; small sphere above the head is
   green while walking, red while waiting.
+- **Stars**: 3 = no crash and no hint/undo; each costs one star (min 1). Best per level in PlayerPrefs `stars_<n>`.
+- **Level select** (`MetaHud.cs`): LEVELS button; locked beyond `PlayerPrefs "Level"`; replaying never lowers progress.
+- **Daily reward**: once per day, 10 coins x streak day (max 7).

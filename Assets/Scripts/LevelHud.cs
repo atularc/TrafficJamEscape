@@ -91,7 +91,7 @@ public class LevelHud : MonoBehaviour
         img.color = new Color(1f, 0.78f, 0.1f, 1f);
         hintButton = btnGo.GetComponent<Button>();
         hintButton.targetGraphic = img;
-        hintButton.onClick.AddListener(ShowHint);
+        hintButton.onClick.AddListener(OnHintButton);
 
         Text label = MakeText("Label", font, 56, TextAnchor.MiddleCenter, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(320f, 110f), btnGo.transform);
         label.text = "HINT";
@@ -293,7 +293,9 @@ public class LevelHud : MonoBehaviour
         if (gm.lastLevelEndedChapter)
             StartCoroutine(ShowToast("CHAPTER COMPLETE!  +" + gm.chapterBonusCoins, 2.2f, 80));
         else if (gm.lastLevelPerfect)
-            StartCoroutine(ShowToast("PERFECT!  +" + gm.perfectBonusCoins));
+            StartCoroutine(ShowToast("PERFECT!  +" + gm.perfectBonusCoins + "\n" + new string('*', gm.lastLevelStars) + "  " + gm.lastLevelStars + " STARS", 1.6f, 90));
+        else
+            StartCoroutine(ShowToast(gm.lastLevelStars + " STARS", 1.4f, 100));
     }
 
     IEnumerator ShowToast(string message, float seconds = 1.6f, int size = 110)
@@ -378,6 +380,13 @@ public class LevelHud : MonoBehaviour
                 return c;
 
         return null;
+    }
+
+    void OnHintButton()
+    {
+        if (NextHintCar() != null)
+            gm.hintsUsed++;
+        ShowHint();
     }
 
     public void ShowHint()
