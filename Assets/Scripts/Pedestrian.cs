@@ -19,14 +19,60 @@ public class Pedestrian : MonoBehaviour
     public float hitPower;
     float t;
 
+    [Header("Pedestrian signal")]
+    [Tooltip("Seconds the pedestrian waits at the curb at each end (signal shows red-man, cars may pass).")]
+    public float waitAtEnds = 1.5f;
+    public bool showSignal = true;
+
+    float waitTimer;
+    Renderer signalRenderer;
+    Material signalMaterial;
+
     private void Start()
     {
         rb = GetComponent<Rigidbody>();
         animator = GetComponent<Animator>();
+
+        if (showSignal)
+            BuildSignal();
+    }
+
+    void BuildSignal()
+    {
+        GameObject s = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        s.name = "PedestrianSignal";
+        Destroy(s.GetComponent<Collider>());
+        s.transform.SetParent(transform, false);
+        float parentScale = Mathf.Max(0.0001f, transform.lossyScale.x);
+        s.transform.localScale = Vector3.one * (0.16f / parentScale);
+        s.transform.localPosition = new Vector3(0f, 1.25f / parentScale, 0f);
+
+        signalRenderer = s.GetComponent<Renderer>();
+        signalRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        signalMaterial = new Material(Shader.Find("Sprites/Default"));
+        signalRenderer.material = signalMaterial;
+        SetSignal(true);
+    }
+
+    // green = pedestrian walking (cars beware), red = pedestrian waiting at the curb
+    void SetSignal(bool walking)
+    {
+        if (signalMaterial != null)
+            signalMaterial.color = walking ? new Color(0.2f, 0.9f, 0.3f, 1f) : new Color(1f, 0.2f, 0.2f, 1f);
+        if (animator != null && !isHit)
+            animator.speed = walking ? 1f : 0f;
     }
 
     void Update()
     {
+        if (isWalking && waitTimer > 0f)
+        {
+            waitTimer -= Time.deltaTime;
+            if (waitTimer <= 0f)
+                SetSignal(true);
+            return;
+        }
+
         if (isWalking)
         {
             t += speed * Time.deltaTime;
@@ -46,6 +92,12 @@ public class Pedestrian : MonoBehaviour
                 Transform temp = positionA;
                 positionA = positionB;
                 positionB = temp;
+
+                if (waitAtEnds > 0f)
+                {
+                    waitTimer = waitAtEnds;
+                    SetSignal(false);
+                }
             }
         }
 
@@ -57,6 +109,9 @@ public class Pedestrian : MonoBehaviour
         if (!isHit)
         {
             isWalking = false;
+
+            if (animator != null)
+                animator.speed = 1f;
 
             rb.isKinematic = false;
             rb.useGravity = true;

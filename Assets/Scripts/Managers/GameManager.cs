@@ -169,20 +169,80 @@ public class GameManager : MonoBehaviour
         OnCarHit?.Invoke();
     }
 
+    [Header("Chapters & undo")]
+    public int chapterSize = 10;
+    public int chapterBonusCoins = 5;
+    public int maxUndosPerLevel = 3;
+    public int undosUsed;
+    public bool lastLevelEndedChapter;
+
+    readonly List<Car> escapedCars = new List<Car>();
+    readonly List<GameObject> escapedCoins = new List<GameObject>();
+
+    public int ChapterOf(int level) { return (Mathf.Max(1, level) - 1) / Mathf.Max(1, chapterSize) + 1; }
+    public int LevelInChapter(int level) { return (Mathf.Max(1, level) - 1) % Mathf.Max(1, chapterSize) + 1; }
+    public bool CanUndo { get { return escapedCars.Count > 0 && undosUsed < maxUndosPerLevel && !AnyCarMoving(); } }
+    public int UndosLeft { get { return Mathf.Max(0, maxUndosPerLevel - undosUsed); } }
+
+    bool AnyCarMoving()
+    {
+        foreach (Car c in CarsInLevel)
+            if (c != null && c.IsMoving)
+                return true;
+        return false;
+    }
+
+    /// <summary>Brings the most recently escaped car back to its start spot.</summary>
+    public bool UndoLastEscape()
+    {
+        if (!CanUndo)
+            return false;
+
+        CancelInvoke("DestroyCar");
+
+        int i = escapedCars.Count - 1;
+        Car car = escapedCars[i];
+        GameObject coin = escapedCoins[i];
+        escapedCars.RemoveAt(i);
+        escapedCoins.RemoveAt(i);
+
+        if (coin != null)
+            Destroy(coin);
+
+        if (car != null)
+        {
+            car.ResetToStart();
+            if (!CarsInLevel.Contains(car))
+                CarsInLevel.Add(car);
+        }
+
+        undosUsed++;
+        OnCarEscape?.Invoke(); // refreshes the HUD counter
+        return true;
+    }
+
     GameObject carEscaped;
     public void CarEscape(GameObject car)
     {
         carEscaped = car;
 
         // spawn coin
-        Instantiate(coinPrefab, car.transform.position + new Vector3(0, 0.5f, 0), Quaternion.identity,
+        GameObject coinObj = Instantiate(coinPrefab, car.transform.position + new Vector3(0, 0.5f, 0), Quaternion.identity,
             currentLevelInstance != null ? currentLevelInstance.transform : null);
 
-        CarsInLevel.Remove(car.GetComponent<Car>());
+        Car carComp = car.GetComponent<Car>();
+        CarsInLevel.Remove(carComp);
+        escapedCars.Add(carComp);
+        escapedCoins.Add(coinObj);
 
         if(CarsInLevel.Count <= 0)
         {
             coinsEarnedInCurrentLevel = carsInitialCount + 3;
+
+            // finishing the last level of a chapter pays a chapter bonus
+            lastLevelEndedChapter = currentLevel > 0 && currentLevel % Mathf.Max(1, chapterSize) == 0;
+            if (lastLevelEndedChapter)
+                coinsEarnedInCurrentLevel += chapterBonusCoins;
 
             // clean run (no collisions) earns a bonus
             lastLevelPerfect = hitsInLevel == 0;
@@ -201,7 +261,9 @@ public class GameManager : MonoBehaviour
 
     void DestroyCar()
     {
-        Destroy(carEscaped);
+        // kept (inactive) instead of destroyed so Undo can bring it back
+        if (carEscaped != null)
+            carEscaped.SetActive(false);
     }
 
     public void UpdateCoins(int amout)
@@ -342,6 +404,10 @@ public class GameManager : MonoBehaviour
         levelCars = cars;
         hitsInLevel = 0;
         lastLevelPerfect = false;
+        lastLevelEndedChapter = false;
+        undosUsed = 0;
+        escapedCars.Clear();
+        escapedCoins.Clear();
     }
 
     void HideLogoScreen()

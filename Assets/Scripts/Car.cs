@@ -305,6 +305,45 @@ public class Car : MonoBehaviour
         didHitSomeone = true;
     }
 
+    Vector3 startPosition;
+    Quaternion startRotation;
+    bool startCaptured;
+
+    void Awake()
+    {
+        startPosition = transform.position;
+        startRotation = transform.rotation;
+        startCaptured = true;
+    }
+
+    /// <summary>Puts an escaped car back where it started (used by Undo).</summary>
+    public void ResetToStart()
+    {
+        CancelInvoke();
+
+        if (startCaptured)
+        {
+            transform.position = startPosition;
+            transform.rotation = startRotation;
+        }
+
+        isMoving = false;
+        isTurning = false;
+        isReseting = false;
+        didHitSomeone = false;
+        isrecording = true;
+        timePassed = 0f;
+        targetepointPosition = Vector3.zero;
+
+        if (positionHistory != null) positionHistory.Clear();
+        if (rotationHistory != null) rotationHistory.Clear();
+
+        SetNumberOfTurns();
+        SetCarTargetDir();
+
+        gameObject.SetActive(true);
+    }
+
     void Reset()
     {
         isReseting = true;

@@ -33,3 +33,14 @@ Select the `MANAGERS_AND_UI` / `GameManager` object in `Game.unity` and set **Ed
 3. Set the camera in the `LevelInfo` component on the prefab root if you need a different framing.
 
 No scene or build-settings changes are needed – levels are found by name.
+
+## Gameplay features (code-built HUD, see `LevelHud.cs`)
+- **HINT** uses `LevelInfo.solution` (car hierarchy indices in a valid clearing order).
+- **UNDO** (3 per level): `GameManager.UndoLastEscape()` brings the last escaped car back to its start pose
+  (`Car.ResetToStart`). Escaped cars are now deactivated, not destroyed.
+- **Chapters**: every `GameManager.chapterSize` (10) levels; names in `LevelHud.ChapterNames`; finishing the last
+  level of a chapter pays `chapterBonusCoins`.
+- **Tutorial tips** appear once, when the situation first occurs (first level, blocked cars, turning cars,
+  pedestrians, hint/undo). Stored in PlayerPrefs keys `tip_*`.
+- **Pedestrian signal**: `Pedestrian.waitAtEnds` seconds of waiting at each curb; small sphere above the head is
+  green while walking, red while waiting.

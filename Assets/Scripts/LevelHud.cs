@@ -21,6 +21,17 @@ public class LevelHud : MonoBehaviour
     Text carsLeftText;
     Button hintButton;
     Text toastText;
+    Button undoButton;
+    Text undoLabel;
+    Text chapterText;
+    Text tipText;
+    Coroutine tipRoutine;
+
+    static readonly string[] ChapterNames =
+    {
+        "Rookie Roads", "City Streets", "Rush Hour", "Downtown Maze", "Gridlock",
+        "Night Shift", "Crosswalk Chaos", "Highway Hustle", "Traffic Tycoon", "Jam Master"
+    };
     GameObject marker;
     float idleTimer;
     Tween shakeTween;
@@ -87,6 +98,34 @@ public class LevelHud : MonoBehaviour
         label.color = new Color(0.15f, 0.1f, 0f, 1f);
         label.fontStyle = FontStyle.Bold;
 
+        // undo button (bottom left of the hint button)
+        var undoGo = new GameObject("UndoButton", typeof(RectTransform), typeof(Image), typeof(Button));
+        undoGo.transform.SetParent(go.transform, false);
+        var urt = (RectTransform)undoGo.transform;
+        urt.anchorMin = urt.anchorMax = new Vector2(0.5f, 0f);
+        urt.pivot = new Vector2(0.5f, 0.5f);
+        urt.anchoredPosition = new Vector2(-340f, 120f);
+        urt.sizeDelta = new Vector2(320f, 110f);
+        var uimg = undoGo.GetComponent<Image>();
+        uimg.color = new Color(0.35f, 0.7f, 1f, 1f);
+        undoButton = undoGo.GetComponent<Button>();
+        undoButton.targetGraphic = uimg;
+        undoButton.onClick.AddListener(DoUndo);
+        undoLabel = MakeText("Label", font, 44, TextAnchor.MiddleCenter, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(320f, 110f), undoGo.transform);
+        undoLabel.fontStyle = FontStyle.Bold;
+        undoLabel.color = new Color(0.05f, 0.12f, 0.25f, 1f);
+
+        // chapter label + tutorial tip banner
+        chapterText = MakeText("Chapter", font, 38, TextAnchor.MiddleCenter, new Vector2(0.5f, 1f), new Vector2(0f, -250f), new Vector2(900f, 60f));
+        chapterText.color = Color.white;
+        AddOutline(chapterText.gameObject);
+
+        tipText = MakeText("Tip", font, 48, TextAnchor.MiddleCenter, new Vector2(0.5f, 0.5f), new Vector2(0f, -560f), new Vector2(940f, 160f));
+        tipText.horizontalOverflow = HorizontalWrapMode.Wrap;
+        tipText.color = new Color(1f, 1f, 0.85f, 1f);
+        AddOutline(tipText.gameObject);
+        tipText.gameObject.SetActive(false);
+
         toastText = MakeText("Toast", font, 110, TextAnchor.MiddleCenter, new Vector2(0.5f, 0.5f), new Vector2(0f, 250f), new Vector2(1000f, 200f));
         toastText.color = new Color(1f, 0.9f, 0.2f, 1f);
         toastText.fontStyle = FontStyle.Bold;
@@ -125,6 +164,73 @@ public class LevelHud : MonoBehaviour
     {
         if (carsLeftText != null) carsLeftText.gameObject.SetActive(visible);
         if (hintButton != null) hintButton.gameObject.SetActive(visible);
+        if (undoButton != null) undoButton.gameObject.SetActive(visible);
+        if (chapterText != null) chapterText.gameObject.SetActive(visible);
+    }
+
+    void DoUndo()
+    {
+        if (gm.UndoLastEscape())
+        {
+            ClearMarker();
+            idleTimer = 0f;
+            RefreshCounter();
+        }
+    }
+
+    string ChapterName(int chapter)
+    {
+        return ChapterNames[(chapter - 1) % ChapterNames.Length];
+    }
+
+    // ---- tutorial tips: shown once, only when the situation first appears
+    void ShowTip(string key, string message)
+    {
+        string pref = "tip_" + key;
+        if (PlayerPrefs.GetInt(pref, 0) == 1)
+            return;
+        PlayerPrefs.SetInt(pref, 1);
+
+        if (tipRoutine != null)
+            StopCoroutine(tipRoutine);
+        tipRoutine = StartCoroutine(TipRoutine(message));
+    }
+
+    IEnumerator TipRoutine(string message)
+    {
+        yield return new WaitForSeconds(1.8f); // let the level fade in first
+        tipText.text = message;
+        tipText.gameObject.SetActive(true);
+        yield return new WaitForSeconds(5f);
+        tipText.gameObject.SetActive(false);
+        tipRoutine = null;
+    }
+
+    void ShowLevelTips()
+    {
+        if (tipRoutine != null)
+        {
+            StopCoroutine(tipRoutine);
+            tipRoutine = null;
+        }
+        tipText.gameObject.SetActive(false);
+
+        if (gm.currentLevel == 1)
+            ShowTip("first", "Tap a car to send it out of the map.");
+        else if (gm.currentLevel == 2)
+            ShowTip("blocked", "A car that hits another car rolls back. Clear the blocking car first!");
+
+        bool hasTurner = false;
+        foreach (Car c in gm.CarsInLevel)
+            if (c != null && c.direction != Direction.Forward) { hasTurner = true; break; }
+        if (hasTurner && gm.currentLevel > 2)
+            ShowTip("turn", "Some cars turn at the first free road. Check where they will go.");
+
+        if (gm.CurrentLevelInstance != null && gm.CurrentLevelInstance.GetComponentInChildren<Pedestrian>() != null)
+            ShowTip("ped", "Pedestrian ahead! Hitting one loses the level. Wait for the red signal.");
+
+        if (gm.currentLevel == 5)
+            ShowTip("hint", "Stuck? Use HINT, and UNDO brings back the last car that left.");
     }
 
     // ------------------------------------------------------------------ events
@@ -136,12 +242,35 @@ public class LevelHud : MonoBehaviour
         toastText.gameObject.SetActive(false);
         SetHudVisible(true);
         RefreshCounter();
+
+        // OnLevelReady fills CarsInLevel right after raising LevelLoaded, so wait a frame
+        StartCoroutine(AfterLevelReady());
+    }
+
+    IEnumerator AfterLevelReady()
+    {
+        yield return null;
+        RefreshCounter();
+        ShowLevelTips();
+
+        if (gm.LevelInChapter(gm.currentLevel) == 1)
+            StartCoroutine(ShowToast("CHAPTER " + gm.ChapterOf(gm.currentLevel) + "\n" + ChapterName(gm.ChapterOf(gm.currentLevel)), 2.2f, 70));
     }
 
     void RefreshCounter()
     {
         if (carsLeftText != null && gm != null)
             carsLeftText.text = "CARS LEFT  " + gm.CarsInLevel.Count + " / " + gm.carsInitialCount;
+
+        if (chapterText != null && gm != null)
+            chapterText.text = "CHAPTER " + gm.ChapterOf(gm.currentLevel) + " · " + ChapterName(gm.ChapterOf(gm.currentLevel))
+                             + "  (" + gm.LevelInChapter(gm.currentLevel) + "/" + gm.chapterSize + ")";
+
+        if (undoButton != null && gm != null)
+        {
+            undoButton.interactable = gm.CanUndo;
+            undoLabel.text = "UNDO " + gm.UndosLeft;
+        }
     }
 
     void OnCarHit()
@@ -161,17 +290,20 @@ public class LevelHud : MonoBehaviour
         SetHudVisible(false);
         ClearMarker();
 
-        if (gm.lastLevelPerfect)
+        if (gm.lastLevelEndedChapter)
+            StartCoroutine(ShowToast("CHAPTER COMPLETE!  +" + gm.chapterBonusCoins, 2.2f, 80));
+        else if (gm.lastLevelPerfect)
             StartCoroutine(ShowToast("PERFECT!  +" + gm.perfectBonusCoins));
     }
 
-    IEnumerator ShowToast(string message)
+    IEnumerator ShowToast(string message, float seconds = 1.6f, int size = 110)
     {
+        toastText.fontSize = size;
         toastText.text = message;
         toastText.gameObject.SetActive(true);
         toastText.transform.localScale = Vector3.zero;
         toastText.transform.DOScale(1f, 0.35f).SetEase(Ease.OutBack);
-        yield return new WaitForSeconds(1.6f);
+        yield return new WaitForSeconds(seconds);
         toastText.gameObject.SetActive(false);
     }
 
@@ -189,6 +321,9 @@ public class LevelHud : MonoBehaviour
             SetHudVisible(false);
             return;
         }
+
+        if (undoButton != null)
+            undoButton.interactable = gm.CanUndo;
 
         if (hintButton != null && !hintButton.gameObject.activeSelf && gm.logoScreen != null && !gm.logoScreen.gameObject.activeSelf)
             SetHudVisible(true);
