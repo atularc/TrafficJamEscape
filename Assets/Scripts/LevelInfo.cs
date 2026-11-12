@@ -12,6 +12,9 @@ public class LevelInfo : MonoBehaviour
     public Vector3 cameraEuler = new Vector3(69.4498f, 0.3439f, 0f);
     public float cameraFieldOfView = 38f;
 
+    [Header("Hint data: indices of the cars (hierarchy order) in a valid clearing order")]
+    public int[] solution;
+
     public void ApplyCamera(Camera cam)
     {
         if (cam == null)

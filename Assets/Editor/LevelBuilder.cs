@@ -19,6 +19,7 @@ public static class LevelBuilder
     const string LevelsDir = "Assets/Resources/Levels";
     const string GameScenePath = "Assets/Scenes/Game.unity";
     const string SpecPath = "Assets/Editor/LevelData/generated_levels.json";
+    const string SolutionsPath = "Assets/Editor/LevelData/solutions.json";
     const int LegacyLevelCount = 30;
 
     static readonly string[] LegacySceneFolders = { "Assets/Scenes/Legacy", "Assets/Scenes/Levels" };
@@ -26,6 +27,8 @@ public static class LevelBuilder
     [Serializable] class CarSpec { public string type; public float x; public float z; public float yaw; }
     [Serializable] class LevelSpec { public int level; public int source; public bool mirror; public int k; public int rounds; public int free0; public CarSpec[] cars; }
     [Serializable] class SpecList { public LevelSpec[] levels; }
+    [Serializable] class SolutionSpec { public int level; public int[] order; }
+    [Serializable] class SolutionList { public SolutionSpec[] levels; }
 
     static readonly Dictionary<string, string> CarPrefabs = new Dictionary<string, string>
     {
@@ -43,6 +46,7 @@ public static class LevelBuilder
 
         ConvertLegacyLevels();
         BuildGeneratedLevels();
+        ApplySolutions();
         BuildGameScene();
         Validate();
 
@@ -173,6 +177,48 @@ public static class LevelBuilder
         }
 
         Debug.Log("Built " + list.levels.Length + " generated levels");
+    }
+
+    /// <summary>Stores a valid clearing order (found by playing each level) in LevelInfo.solution for the hint button.</summary>
+    [MenuItem("Tools/Traffic Jam/Apply Hint Solutions")]
+    public static void ApplySolutions()
+    {
+        if (!File.Exists(SolutionsPath))
+        {
+            Debug.LogWarning("No solutions file at " + SolutionsPath);
+            return;
+        }
+
+        SolutionList list = JsonUtility.FromJson<SolutionList>(File.ReadAllText(SolutionsPath));
+        int applied = 0;
+        foreach (SolutionSpec sol in list.levels)
+        {
+            string path = LevelsDir + "/Level_" + sol.level + ".prefab";
+            if (!File.Exists(path))
+                continue;
+
+            GameObject root = PrefabUtility.LoadPrefabContents(path);
+            var info = root.GetComponent<LevelInfo>();
+            if (info != null)
+            {
+                info.solution = sol.order;
+
+                // escape triggers are invisible helpers - some original levels left their debug mesh switched on
+                foreach (Transform t in root.GetComponentsInChildren<Transform>(true))
+                {
+                    if (!t.CompareTag("EscapeTrigger"))
+                        continue;
+                    var mr = t.GetComponent<MeshRenderer>();
+                    if (mr != null)
+                        mr.enabled = false;
+                }
+
+                PrefabUtility.SaveAsPrefabAsset(root, path);
+                applied++;
+            }
+            PrefabUtility.UnloadPrefabContents(root);
+        }
+        Debug.Log("Applied hint solutions to " + applied + " levels");
     }
 
     static void RemoveCars(GameObject levelRoot)

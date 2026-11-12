@@ -71,6 +71,16 @@ public class GameManager : MonoBehaviour
     public int randomLevelsStartAt = 10;
 
     GameObject currentLevelInstance;
+    Car[] levelCars = new Car[0];
+
+    [Header("Gameplay")]
+    public int hitsInLevel;
+    public bool lastLevelPerfect;
+    public int perfectBonusCoins = 2;
+
+    public GameObject CurrentLevelInstance { get { return currentLevelInstance; } }
+    public Car[] LevelCars { get { return levelCars; } }
+    public LevelInfo CurrentLevelInfo { get { return currentLevelInstance != null ? currentLevelInstance.GetComponent<LevelInfo>() : null; } }
     Transform levelContainer;
     int totalLevels = -1;
 
@@ -93,6 +103,9 @@ public class GameManager : MonoBehaviour
         //PlayerPrefs.SetInt("Level", 29);
 
         ApplyOriginalLighting();
+
+        if (GetComponent<LevelHud>() == null)
+            gameObject.AddComponent<LevelHud>();
     }
 
     /// <summary>
@@ -152,6 +165,7 @@ public class GameManager : MonoBehaviour
 
     public void CarHit()
     {
+        hitsInLevel++;
         OnCarHit?.Invoke();
     }
 
@@ -169,6 +183,11 @@ public class GameManager : MonoBehaviour
         if(CarsInLevel.Count <= 0)
         {
             coinsEarnedInCurrentLevel = carsInitialCount + 3;
+
+            // clean run (no collisions) earns a bonus
+            lastLevelPerfect = hitsInLevel == 0;
+            if (lastLevelPerfect)
+                coinsEarnedInCurrentLevel += perfectBonusCoins;
 
             LevelFinished();
 
@@ -319,6 +338,10 @@ public class GameManager : MonoBehaviour
         }
 
         carsInitialCount = CarsInLevel.Count;
+
+        levelCars = cars;
+        hitsInLevel = 0;
+        lastLevelPerfect = false;
     }
 
     void HideLogoScreen()

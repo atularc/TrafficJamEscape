@@ -25,6 +25,7 @@ public class Car : MonoBehaviour
     public float minDistanceToTurn;
 
     bool isMoving;
+    public bool IsMoving { get { return isMoving; } }
     bool isTurning;
 
     float step;
@@ -286,6 +287,8 @@ public class Car : MonoBehaviour
 
         if (this.isMoving)
         {
+            GameManager.Instance.CarHit();
+
             isMoving = false;
             isTurning = false;
 
