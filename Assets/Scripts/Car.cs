@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -27,6 +28,8 @@ public class Car : MonoBehaviour
     bool isMoving;
     public bool IsMoving { get { return isMoving; } }
     bool isTurning;
+    bool isExiting;
+    BoxCollider exitCollider;
 
     float step;
 
@@ -78,6 +81,9 @@ public class Car : MonoBehaviour
         // Check for mouse click
         if (Input.GetMouseButtonDown(0) && !isMoving)
         {
+            if (!GameManager.Instance.CanTapCar)
+                return;
+
             // Cast a ray from the camera to the mouse position
             Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
             RaycastHit hit;
@@ -95,7 +101,7 @@ public class Car : MonoBehaviour
     }
     void FixedUpdate()
     {
-        if (didHitSomeone)
+        if (didHitSomeone || isExiting)
             return;
 
         if (isrecording && isMoving)
@@ -329,6 +335,9 @@ public class Car : MonoBehaviour
 
         isMoving = false;
         isTurning = false;
+        isExiting = false;
+        if (exitCollider != null)
+            exitCollider.enabled = true;
         isReseting = false;
         didHitSomeone = false;
         isrecording = true;
@@ -351,14 +360,50 @@ public class Car : MonoBehaviour
 
     void OnTriggerEnter(Collider c)
     {
-        if(c.tag == "Car")
+        if (isExiting)
+            return;
+
+        if (c.CompareTag("Car"))
         {
             OnHit(c);
         }
 
-        if(c.tag == "EscapeTrigger")
+        if (c.CompareTag("EscapeTrigger") && isMoving && !didHitSomeone)
+            StartCoroutine(DriveOffscreen());
+    }
+
+    IEnumerator DriveOffscreen()
+    {
+        isExiting = true;
+        Vector3 exitPosition = transform.position;
+        Vector3 velocity = transform.forward * Mathf.Max(overallSpeed * speed, 1f);
+        exitCollider = GetComponent<BoxCollider>();
+        if (exitCollider != null)
+            exitCollider.enabled = false;
+
+        Bounds bounds = new Bounds(exitPosition, Vector3.zero);
+        foreach (var renderer in GetComponentsInChildren<Renderer>())
         {
-            GameManager.Instance.CarEscape(this.transform.gameObject);
+            if (renderer.enabled)
+                bounds.Encapsulate(renderer.bounds);
         }
+        bounds.Expand(.10f);
+
+        var camera = Camera.main;
+        var planes = new Plane[6];
+        for (float elapsed = 0; camera != null && elapsed < 3f; elapsed += Time.deltaTime)
+        {
+            GeometryUtility.CalculateFrustumPlanes(camera, planes);
+            if (!GeometryUtility.TestPlanesAABB(planes, bounds))
+                break;
+
+            Vector3 travel = velocity * Time.deltaTime;
+            transform.position += travel;
+            bounds.center += travel;
+            yield return null;
+        }
+
+        isMoving = false;
+        GameManager.Instance.CarEscape(gameObject, exitPosition);
     }
 }

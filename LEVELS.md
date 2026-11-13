@@ -20,7 +20,7 @@ Assets/Editor/LevelData/generated_levels.json                  <- car layouts of
 * Levels 1-30 are the original levels, converted 1:1 from the old scenes (same objects, same positions).
 * Levels 31-100 reuse the original maps (some mirrored left/right) with new car puzzles. Each puzzle was
   checked with a solver and then played through automatically in Unity with the real `Car.cs` code.
-* After level 100 the game keeps going with random levels (`GameManager.randomLevelsStartAt` .. last level).
+* After level 100, endless stages reuse puzzles from `GameManager.randomLevelsStartAt` through the last authored level. Each endless stage keeps the same puzzle when retried or replayed.
 
 ## Testing a level
 Select the `MANAGERS_AND_UI` / `GameManager` object in `Game.unity` and set **Editor Start Level** (e.g. 57), press Play.
@@ -34,11 +34,25 @@ Select the `MANAGERS_AND_UI` / `GameManager` object in `Game.unity` and set **Ed
 
 No scene or build-settings changes are needed – levels are found by name.
 
-## Gameplay features (code-built HUD, see `LevelHud.cs`)
+## Art and interface
+
+The game applies the cartoon cars, textured terrain, curbs, and scenery as each level loads. The existing level prefabs supply the roads, cars, movement directions, and colliders. The visual models use `Assets/Scripts/CartoonModels.cs`, and the district art and color choices live in `Assets/Scripts/ChapterArt.cs`.
+
+| Levels | Theme |
+| --- | --- |
+| 1–20 | Flower meadows |
+| 21–40 | Snowy pines |
+| 41–60 | Cactus desert |
+| 61–80 | Autumn woodland |
+| 81–100 | Apple orchards |
+
+`MetaHud.cs` builds the loading screen, in-game HUD, level map, results, retry, and daily reward screens. The art for these screens is in `Assets/Resources/TrafficUi`, and the terrain patterns and roof arrows are in `Assets/Resources/Cartoon`.
+
+## Gameplay features
 - **HINT** uses `LevelInfo.solution` (car hierarchy indices in a valid clearing order).
 - **UNDO** (3 per level): `GameManager.UndoLastEscape()` brings the last escaped car back to its start pose
   (`Car.ResetToStart`). Escaped cars are now deactivated, not destroyed.
-- **Chapters**: every `GameManager.chapterSize` (10) levels; names in `LevelHud.ChapterNames`; finishing the last
+- **Chapters**: every `GameManager.chapterSize` (10) levels; names in `ChapterArt.Names`; finishing the last
   level of a chapter pays `chapterBonusCoins`.
 - **Tutorial tips** appear once, when the situation first occurs (first level, blocked cars, turning cars,
   pedestrians, hint/undo). Stored in PlayerPrefs keys `tip_*`.

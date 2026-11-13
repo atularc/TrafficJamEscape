@@ -82,6 +82,13 @@ public class GameManager : MonoBehaviour
     public Car[] LevelCars { get { return levelCars; } }
     public LevelInfo CurrentLevelInfo { get { return currentLevelInstance != null ? currentLevelInstance.GetComponent<LevelInfo>() : null; } }
     Transform levelContainer;
+    MetaHud hud;
+    bool loadingLevel;
+    public bool CanPlay => currentLevelInstance != null && !loadingLevel
+        && (logoScreen == null || !logoScreen.gameObject.activeSelf)
+        && (level_complete_UI == null || !level_complete_UI.activeSelf)
+        && (level_lose_UI == null || !level_lose_UI.activeSelf);
+    public bool CanTapCar => CanPlay && (hud == null || (!hud.BlocksTraffic && !hud.PointerHitsUi()));
     int totalLevels = -1;
 
     public int TotalLevels
@@ -102,34 +109,43 @@ public class GameManager : MonoBehaviour
     {
         //PlayerPrefs.SetInt("Level", 29);
 
-        ApplyOriginalLighting();
+        ApplyLighting();
 
         if (GetComponent<LevelHud>() == null)
             gameObject.AddComponent<LevelHud>();
 
-        if (GetComponent<MetaHud>() == null)
-            gameObject.AddComponent<MetaHud>();
+        // The serialized UI objects still provide the scene's transition and result states.
+        foreach (Canvas legacy in transform.root.GetComponentsInChildren<Canvas>(true))
+        {
+            legacy.enabled = false;
+            if (legacy.TryGetComponent<UnityEngine.UI.GraphicRaycaster>(out var raycaster))
+                raycaster.enabled = false;
+        }
+
+        hud = GetComponent<MetaHud>();
+        if (hud == null)
+            hud = gameObject.AddComponent<MetaHud>();
     }
 
-    /// <summary>
-    /// Same lighting the old per-level scenes had, applied from code so the single Game scene
-    /// always looks identical (independent of baked/auto-generated lighting state).
-    /// </summary>
-    void ApplyOriginalLighting()
+    void ApplyLighting()
     {
-        RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Trilight;
-        RenderSettings.ambientSkyColor = new Color(0.8181766f, 0.8900104f, 1.1486982f, 1f);
-        RenderSettings.ambientEquatorColor = new Color(0.1254895f, 0.39043456f, 0.5660378f, 1f);
-        RenderSettings.ambientGroundColor = new Color(0.33962262f, 0.30384475f, 0.23228905f, 1f);
+        RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
+        RenderSettings.ambientLight = new Color32(135, 148, 172, 255);
         RenderSettings.ambientIntensity = 1f;
+        if (Camera.main != null)
+        {
+            Camera.main.clearFlags = CameraClearFlags.SolidColor;
+            Camera.main.backgroundColor = new Color32(193, 230, 250, 255);
+        }
 
         foreach (Light l in FindObjectsOfType<Light>())
         {
             if (l.type != LightType.Directional)
                 continue;
 
-            l.color = new Color(0.94706f, 1f, 0.9009434f, 1f);
-            l.intensity = 1.1f;
+            l.color = new Color32(255, 247, 233, 255);
+            l.intensity = 1.13f;
+            l.shadowStrength = .73f;
             l.shadows = LightShadows.Soft;
             RenderSettings.sun = l;
         }
@@ -139,7 +155,7 @@ public class GameManager : MonoBehaviour
 
     void Start()
     {
-        // The logo screen is visible while the first level loads.
+        UpdateCoins(PlayerPrefs.GetInt("playercoins"));
         Invoke("InitGame", 1.5f);
     }
 
@@ -161,8 +177,11 @@ public class GameManager : MonoBehaviour
         LoadLevel(currentLevel);
     }
 
+    public int MovesTaken { get; private set; }
+
     public void CarClicked()
     {
+        MovesTaken++;
         OnCarClick?.Invoke();
     }
 
@@ -186,7 +205,7 @@ public class GameManager : MonoBehaviour
 
     public int ChapterOf(int level) { return (Mathf.Max(1, level) - 1) / Mathf.Max(1, chapterSize) + 1; }
     public int LevelInChapter(int level) { return (Mathf.Max(1, level) - 1) % Mathf.Max(1, chapterSize) + 1; }
-    public bool CanUndo { get { return escapedCars.Count > 0 && undosUsed < maxUndosPerLevel && !AnyCarMoving(); } }
+    public bool CanUndo { get { return CanPlay && escapedCars.Count > 0 && undosUsed < maxUndosPerLevel && !AnyCarMoving(); } }
     public int UndosLeft { get { return Mathf.Max(0, maxUndosPerLevel - undosUsed); } }
 
     bool AnyCarMoving()
@@ -202,8 +221,6 @@ public class GameManager : MonoBehaviour
     {
         if (!CanUndo)
             return false;
-
-        CancelInvoke("DestroyCar");
 
         int i = escapedCars.Count - 1;
         Car car = escapedCars[i];
@@ -226,19 +243,18 @@ public class GameManager : MonoBehaviour
         return true;
     }
 
-    GameObject carEscaped;
-    public void CarEscape(GameObject car)
+    public void CarEscape(GameObject car, Vector3 exitPosition)
     {
-        carEscaped = car;
-
         // spawn coin
-        GameObject coinObj = Instantiate(coinPrefab, car.transform.position + new Vector3(0, 0.5f, 0), Quaternion.identity,
+        GameObject coinObj = Instantiate(coinPrefab, exitPosition + new Vector3(0, 0.5f, 0), Quaternion.identity,
             currentLevelInstance != null ? currentLevelInstance.transform : null);
 
         Car carComp = car.GetComponent<Car>();
         CarsInLevel.Remove(carComp);
         escapedCars.Add(carComp);
         escapedCoins.Add(coinObj);
+        car.SetActive(false);
+        OnCarEscape?.Invoke();
 
         if(CarsInLevel.Count <= 0)
         {
@@ -264,16 +280,6 @@ public class GameManager : MonoBehaviour
             return;
         }
 
-        Invoke("DestroyCar", 0.4f);
-
-        OnCarEscape?.Invoke();
-    }
-
-    void DestroyCar()
-    {
-        // kept (inactive) instead of destroyed so Undo can bring it back
-        if (carEscaped != null)
-            carEscaped.SetActive(false);
     }
 
     public void UpdateCoins(int amout)
@@ -289,10 +295,13 @@ public class GameManager : MonoBehaviour
     {
         Debug.Log("Level Finished !");
 
-        UpdateCoins(PlayerPrefs.GetInt("playercoins"));
+        if (level_complete_UI.activeSelf || level_lose_UI.activeSelf)
+            return;
 
         level_complete_UI.SetActive(true);
-        level_complete_UI.GetComponent<DOTweenAnimation>().DORestartAllById("LVL_COMPLETE");
+        AddCoins(coinsEarnedInCurrentLevel);
+        PlayerPrefs.SetInt("Level", Mathf.Max(MaxUnlockedLevel, currentLevel + 1));
+        PlayerPrefs.Save();
 
         OnLevelFinished?.Invoke();
     }
@@ -302,24 +311,16 @@ public class GameManager : MonoBehaviour
         ShowLogoScreen();
     }
 
-    public void LoadNextLevelDelay()
-    {
-        Invoke("LoadNextLevel", 1.25f);
-    }
-
     public void SkipLevel()
     {
-        LoadNextLevel();
-    }
+        if (!level_complete_UI.activeSelf || loadingLevel || (logoScreen != null && logoScreen.gameObject.activeSelf))
+            return;
 
-    void LoadNextLevel()
-    {
-        currentLevel++;
-
+        int nextLevel = currentLevel + 1;
         // replaying an old level must never lower the saved progress
-        PlayerPrefs.SetInt("Level", Mathf.Max(PlayerPrefs.GetInt("Level"), currentLevel));
+        PlayerPrefs.SetInt("Level", Mathf.Max(MaxUnlockedLevel, nextLevel));
 
-        ShowLogoScreen();
+        LoadLevel(nextLevel);
     }
 
     public int MaxUnlockedLevel { get { return Mathf.Max(1, PlayerPrefs.GetInt("Level")); } }
@@ -327,10 +328,9 @@ public class GameManager : MonoBehaviour
     /// <summary>Jump to an unlocked level from the level-select screen.</summary>
     public void JumpToLevel(int level)
     {
-        if (level < 1 || level > MaxUnlockedLevel)
+        if (loadingLevel || (logoScreen != null && logoScreen.gameObject.activeSelf) || level < 1 || (level > MaxUnlockedLevel && level != currentLevel))
             return;
 
-        CancelInvoke("LoadNextLevel");
         currentLevel = level;
         ShowLogoScreen();
     }
@@ -342,6 +342,10 @@ public class GameManager : MonoBehaviour
 
     void ShowLogoScreen()
     {
+        if (loadingLevel || logoScreen.gameObject.activeSelf)
+            return;
+
+        loadingLevel = true;
         // Set the initial alpha to 0
         logoScreen.alpha = 0f;
 
@@ -359,6 +363,8 @@ public class GameManager : MonoBehaviour
 
     public void LoadLevel(int level)
     {
+        currentLevel = level;
+        loadingLevel = true;
         StopAllCoroutines();
         StartCoroutine(LoadLevelRoutine(level));
     }
@@ -380,10 +386,12 @@ public class GameManager : MonoBehaviour
         GameObject prefab = FindLevelPrefab(level);
         if (prefab == null)
         {
-            // out of authored levels -> endless random levels (same behaviour the game had before)
+            // Keep an endless level's layout stable across retries, replays, and restarts.
             int total = TotalLevels;
             int from = Mathf.Clamp(randomLevelsStartAt, 1, Mathf.Max(1, total));
-            prefab = FindLevelPrefab(UnityEngine.Random.Range(from, total + 1));
+            int available = total - from + 1;
+            if (available > 0)
+                prefab = FindLevelPrefab(from + (int)(((long)level - total - 1) * 1543 % available));
         }
 
         if (prefab == null)
@@ -403,6 +411,7 @@ public class GameManager : MonoBehaviour
 
         currentLevelInstance = Instantiate(prefab, levelContainer);
         currentLevelInstance.name = prefab.name;
+        ChapterArt.Apply(currentLevelInstance, ChapterOf(level));
 
         LevelInfo info = currentLevelInstance.GetComponent<LevelInfo>();
         if (info != null)
@@ -413,12 +422,8 @@ public class GameManager : MonoBehaviour
 
     void OnLevelReady()
     {
-        LevelLoaded?.Invoke();
-
         level_complete_UI.gameObject.SetActive(false);
         level_lose_UI.gameObject.SetActive(false);
-
-        HideLogoScreen();
 
         CarsInLevel.Clear();
 
@@ -431,6 +436,9 @@ public class GameManager : MonoBehaviour
         carsInitialCount = CarsInLevel.Count;
 
         levelCars = cars;
+        ChapterArt.StyleCars(levelCars, ChapterOf(currentLevel));
+        LevelInfo.FitCarsAboveControls(Camera.main, levelCars);
+        MovesTaken = 0;
         hitsInLevel = 0;
         lastLevelPerfect = false;
         lastLevelEndedChapter = false;
@@ -439,18 +447,31 @@ public class GameManager : MonoBehaviour
         lastLevelStars = 0;
         escapedCars.Clear();
         escapedCoins.Clear();
+        LevelLoaded?.Invoke();
+        HideLogoScreen();
     }
 
     void HideLogoScreen()
     {
+        if (logoScreen == null || !logoScreen.gameObject.activeSelf)
+        {
+            loadingLevel = false;
+            return;
+        }
+
         logoScreen.DOFade(0f, 1.35f)
-            .OnComplete(() => logoScreen.gameObject.SetActive(false));
+            .OnComplete(() =>
+            {
+                logoScreen.gameObject.SetActive(false);
+                loadingLevel = false;
+            });
     }
 
     public void LevelLose()
     {
-        
-        level_lose_UI.GetComponent<DOTweenAnimation>().DORestartAllById("LVL_FAIL");
+        if (loadingLevel || level_lose_UI.activeSelf || level_complete_UI.activeSelf)
+            return;
+
         level_lose_UI.SetActive(true);
 
         Debug.Log("YOU LOST !");

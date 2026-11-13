@@ -26,7 +26,7 @@ public class Pedestrian : MonoBehaviour
 
     float waitTimer;
     Renderer signalRenderer;
-    Material signalMaterial;
+
 
     private void Start()
     {
@@ -39,26 +39,29 @@ public class Pedestrian : MonoBehaviour
 
     void BuildSignal()
     {
-        GameObject s = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-        s.name = "PedestrianSignal";
-        Destroy(s.GetComponent<Collider>());
-        s.transform.SetParent(transform, false);
-        float parentScale = Mathf.Max(0.0001f, transform.lossyScale.x);
-        s.transform.localScale = Vector3.one * (0.16f / parentScale);
-        s.transform.localPosition = new Vector3(0f, 1.25f / parentScale, 0f);
-
-        signalRenderer = s.GetComponent<Renderer>();
-        signalRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-        signalMaterial = new Material(Shader.Find("Sprites/Default"));
-        signalRenderer.material = signalMaterial;
+        var body = GetComponentInChildren<SkinnedMeshRenderer>();
+        float height = body != null ? Mathf.Max(.25f, body.bounds.max.y - transform.position.y) : .42f;
+        var signal = new GameObject("Pedestrian signal").transform;
+        signal.SetParent(transform, false);
+        signal.position = transform.position + Vector3.up * (height + .09f);
+        Vector3 scale = transform.lossyScale;
+        signal.localScale = new Vector3(
+            .087f / Mathf.Max(.001f, Mathf.Abs(scale.x)),
+            .087f / Mathf.Max(.001f, Mathf.Abs(scale.y)),
+            .087f / Mathf.Max(.001f, Mathf.Abs(scale.z)));
+        CartoonModels.Part(signal, "Signal rim", Vector3.zero, Vector3.one,
+            new Color32(39, 61, 100, 255), false);
+        signalRenderer = CartoonModels.Part(signal, "Signal lamp", Vector3.up * .15f,
+            Vector3.one * .82f, new Color32(137, 234, 105, 255), false, 50).GetComponent<Renderer>();
         SetSignal(true);
     }
 
     // green = pedestrian walking (cars beware), red = pedestrian waiting at the curb
     void SetSignal(bool walking)
     {
-        if (signalMaterial != null)
-            signalMaterial.color = walking ? new Color(0.2f, 0.9f, 0.3f, 1f) : new Color(1f, 0.2f, 0.2f, 1f);
+        if (signalRenderer != null)
+            signalRenderer.sharedMaterial = CartoonModels.MaterialFor(walking
+                ? new Color32(137, 234, 105, 255) : new Color32(247, 105, 110, 255), 50);
         if (animator != null && !isHit)
             animator.speed = walking ? 1f : 0f;
     }
