@@ -71,11 +71,17 @@ static class CartoonModels
             }
         }
 
+        ArrowSign(car, model, new Vector3(0, roofHeight + .030f, cabinZ), new Vector2(.74f, Mathf.Min(.40f, roofLength)));
+    }
+
+    /// <summary>The turn arrow drawn flat on top of a car or animal.</summary>
+    public static SpriteRenderer ArrowSign(Car car, Transform model, Vector3 position, Vector2 size)
+    {
         var sign = new GameObject("Direction arrow", typeof(SpriteRenderer)).GetComponent<SpriteRenderer>();
         sign.transform.SetParent(model, false);
-        sign.transform.localPosition = new Vector3(0, roofHeight + .030f, cabinZ);
+        sign.transform.localPosition = position;
         sign.transform.localRotation = Quaternion.Euler(90, 0, 0);
-        sign.transform.localScale = new Vector3(.74f, Mathf.Min(.40f, roofLength), 1);
+        sign.transform.localScale = new Vector3(size.x, size.y, 1);
         if (!Arrows.TryGetValue(car.direction, out Sprite sprite))
         {
             Texture2D tex = Resources.Load<Texture2D>("Cartoon/" + car.direction.ToString().ToLowerInvariant());
@@ -90,6 +96,7 @@ static class CartoonModels
         // Keep symbols readable on mirrored layouts without flipping the represented turn.
         if (model.lossyScale.x * model.lossyScale.y * model.lossyScale.z < 0)
             sign.flipX = true;
+        return sign;
     }
 
     public static Transform Part(Transform parent, string name, Vector3 position, Vector3 size,
@@ -104,6 +111,21 @@ static class CartoonModels
         renderer.sharedMaterial = MaterialFor(color, gloss);
         renderer.shadowCastingMode = ShadowCastingMode.Off;
         return part.transform;
+    }
+
+    static readonly Dictionary<Color32, Material> Glows = new Dictionary<Color32, Material>();
+
+    /// <summary>Self-lit material (lava, lanterns): the colour glows instead of only being lit.</summary>
+    public static Material GlowFor(Color32 color)
+    {
+        if (Glows.TryGetValue(color, out Material existing))
+            return existing;
+        var material = new Material(Shader.Find("Standard")) { color = color, name = "Cartoon glow", enableInstancing = true };
+        material.SetFloat("_Glossiness", .5f);
+        material.EnableKeyword("_EMISSION");
+        material.SetColor("_EmissionColor", (Color)color * .9f);
+        Glows.Add(color, material);
+        return material;
     }
 
     public static Material MaterialFor(Color32 color, int gloss = 23)

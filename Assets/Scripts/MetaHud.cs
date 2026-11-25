@@ -26,7 +26,6 @@ public class MetaHud : MonoBehaviour
     Button undo, hint, dailyButton;
     Image rewardMarker;
     GameObject page;
-    int chapterPage;
     Rect lastSafeArea;
     Vector2Int lastScreen;
     GraphicRaycaster raycaster;
@@ -309,28 +308,21 @@ public class MetaHud : MonoBehaviour
 
     void OpenMap()
     {
-        chapterPage = gm.ChapterOf(gm.currentLevel);
         BuildMap();
     }
 
+    /// <summary>Every level on one winding, scrollable path, with a sign at the start of each district.</summary>
     void BuildMap()
     {
         int lastLevel = Mathf.Max(gm.TotalLevels, Mathf.Max(gm.currentLevel, gm.MaxUnlockedLevel));
-        int maxChapter = gm.ChapterOf(lastLevel);
         int pageSize = Mathf.Max(1, gm.chapterSize);
-        int first = (chapterPage - 1) * pageSize + 1;
-        int count = Mathf.Min(pageSize, lastLevel - first + 1);
         var layer = OpenPage("Level map", Sky);
         var background = TrafficUi.Paint(Layer(layer, "Illustrated park"), Color.white, "airy_map");
         background.preserveAspect = false;
         var inner = Layer(layer, "Map safe area");
         ApplySafeArea(inner, lastSafeArea.width > 0 ? lastSafeArea : new Rect(0, 0, Screen.width, Screen.height), lastScreen);
         Label(inner, "Choose a level", 95, TrafficUi.Ink, Top, 0, -148, 960, 130);
-        Label(inner, ChapterArt.Name(chapterPage), 38, TrafficUi.Ink, Top, 0, -246, 560, 54);
-        IconButton(inner, "Previous district", "previous", Top, -387, -240,
-            () => { chapterPage--; BuildMap(); }).interactable = chapterPage > 1;
-        IconButton(inner, "Next district", "next", Top, 387, -240,
-            () => { chapterPage++; BuildMap(); }).interactable = chapterPage < maxChapter;
+        Label(inner, lastLevel + " levels · " + gm.ChapterOf(lastLevel) + " districts", 38, TrafficUi.Ink, Top, 0, -246, 760, 54);
 
         var viewport = Layer(inner, "Level path viewport");
         viewport.offsetMin = new Vector2(25, 225);
@@ -340,7 +332,24 @@ public class MetaHud : MonoBehaviour
 
         const float spacing = 187;
         const float topPadding = 120;
-        float contentHeight = topPadding * 2 + Mathf.Max(0, count - 1) * spacing;
+        const float signHeight = 210;
+
+        // lay out the nodes top to bottom, leaving room for a district sign before every chapter
+        var nodeY = new float[lastLevel];
+        var signY = new List<(int chapter, float y)>();
+        float y = topPadding;
+        for (int index = 0; index < lastLevel; index++)
+        {
+            if (index % pageSize == 0)
+            {
+                signY.Add((index / pageSize + 1, y + 12)); // centred in the gap between the two bubbles
+                y += signHeight;
+            }
+            nodeY[index] = y;
+            y += spacing;
+        }
+        float contentHeight = y - spacing + topPadding;
+
         var content = TrafficUi.Place(viewport, "Level path content", Top, 0, 0, 940, contentHeight);
         content.pivot = Top;
         var scroll = viewport.gameObject.AddComponent<ScrollRect>();
@@ -349,16 +358,19 @@ public class MetaHud : MonoBehaviour
         scroll.horizontal = false;
         scroll.movementType = ScrollRect.MovementType.Clamped;
         scroll.scrollSensitivity = 80;
+        scroll.inertia = true;
 
         var points = new List<Vector2> { new Vector2(MapOffsets[0] + 37, -12) };
-        for (int index = 0; index < count; index++)
-            points.Add(new Vector2(MapOffsets[index % MapOffsets.Length], -topPadding - index * spacing));
-        points.Add(new Vector2(MapOffsets[(count - 1) % MapOffsets.Length] - 100, -contentHeight + 4));
+        for (int index = 0; index < lastLevel; index++)
+            points.Add(new Vector2(MapOffsets[index % MapOffsets.Length], -nodeY[index]));
+        points.Add(new Vector2(MapOffsets[(lastLevel - 1) % MapOffsets.Length] - 100, -contentHeight + 4));
         AddPath(content, points, new Color32(145, 177, 205, 140), -9, 41);
         AddPath(content, points, TrafficUi.Paper, 0, 37);
 
-        for (int index = 0; index < count; index++)
-            BuildNode(content, first + index, points[index + 1]);
+        foreach (var sign in signY)
+            BuildDistrictSign(content, sign.chapter, sign.y);
+        for (int index = 0; index < lastLevel; index++)
+            BuildNode(content, index + 1, points[index + 1]);
 
         bool fromWin = gm.level_complete_UI.activeSelf;
         bool fromLoss = gm.level_lose_UI.activeSelf;
@@ -384,12 +396,20 @@ public class MetaHud : MonoBehaviour
         });
         sound = soundButton.transform.GetChild(0).GetComponent<Image>();
 
+        // open the path at the level being played
         Canvas.ForceUpdateCanvases();
         float scrollable = Mathf.Max(0, contentHeight - viewport.rect.height);
-        if (scrollable > 0 && chapterPage == gm.ChapterOf(gm.currentLevel))
-            scroll.verticalNormalizedPosition = 1 - Mathf.Clamp01((gm.currentLevel - first - 3) * spacing / scrollable);
-        else
-            scroll.verticalNormalizedPosition = 1;
+        int focus = Mathf.Clamp(gm.currentLevel, 1, lastLevel) - 1;
+        float target = nodeY[focus] - viewport.rect.height * .5f;
+        scroll.verticalNormalizedPosition = scrollable > 0 ? 1 - Mathf.Clamp01(target / scrollable) : 1;
+    }
+
+    void BuildDistrictSign(RectTransform parent, int chapter, float y)
+    {
+        var sign = TrafficUi.Place(parent, "District sign", Top, 0, -y, 640, 96);
+        TrafficUi.Paint(sign, TrafficUi.Paper, "airy_white");
+        Shadow(sign, .18f, -7);
+        Label(sign, "District " + chapter + " · " + ChapterArt.Name(chapter), 44, TrafficUi.Ink, Center, 0, 0, 620, 80);
     }
 
     static void AddPath(RectTransform parent, List<Vector2> points, Color color, float y, float width)

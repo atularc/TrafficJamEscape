@@ -67,6 +67,9 @@ public class GameManager : MonoBehaviour
     [Tooltip("Editor testing: when > 0 this level is loaded on Play instead of the saved progress.")]
     public int editorStartLevel;
 
+    [Tooltip("Testing: every level is open in the level select. Does not change the player's saved progress.")]
+    public bool unlockAllLevels;
+
     [Tooltip("When the player runs out of authored levels a random one from this number upwards is played.")]
     public int randomLevelsStartAt = 10;
 
@@ -300,7 +303,7 @@ public class GameManager : MonoBehaviour
 
         level_complete_UI.SetActive(true);
         AddCoins(coinsEarnedInCurrentLevel);
-        PlayerPrefs.SetInt("Level", Mathf.Max(MaxUnlockedLevel, currentLevel + 1));
+        PlayerPrefs.SetInt("Level", Mathf.Max(SavedLevel, currentLevel + 1));
         PlayerPrefs.Save();
 
         OnLevelFinished?.Invoke();
@@ -318,12 +321,16 @@ public class GameManager : MonoBehaviour
 
         int nextLevel = currentLevel + 1;
         // replaying an old level must never lower the saved progress
-        PlayerPrefs.SetInt("Level", Mathf.Max(MaxUnlockedLevel, nextLevel));
+        PlayerPrefs.SetInt("Level", Mathf.Max(SavedLevel, nextLevel));
 
         LoadLevel(nextLevel);
     }
 
-    public int MaxUnlockedLevel { get { return Mathf.Max(1, PlayerPrefs.GetInt("Level")); } }
+    /// <summary>Highest level the player has really reached (saved progress).</summary>
+    int SavedLevel { get { return Mathf.Max(1, PlayerPrefs.GetInt("Level")); } }
+
+    /// <summary>Highest level that can be opened; everything when unlockAllLevels is ticked.</summary>
+    public int MaxUnlockedLevel { get { return unlockAllLevels ? Mathf.Max(SavedLevel, TotalLevels) : SavedLevel; } }
 
     /// <summary>Jump to an unlocked level from the level-select screen.</summary>
     public void JumpToLevel(int level)

@@ -34,7 +34,8 @@ Shader "Traffic Jam/Cartoon Terrain"
             half3 tile = ((_SideColor.rgb * input.color.r + _RimColor.rgb * input.color.g) * mineral
                 + pattern * input.color.b) * input.color.a;
             half3 asphalt = _RoadColor.rgb * (pattern * 1.42);
-            output.Albedo = lerp(tile, asphalt, _Road) * .84;
+            // tiles at full strength so the painted textures stay bright; the road keeps its old tone
+            output.Albedo = lerp(tile, asphalt, _Road) * lerp(.97, .84, _Road);
             output.Alpha = 1;
         }
         ENDCG
